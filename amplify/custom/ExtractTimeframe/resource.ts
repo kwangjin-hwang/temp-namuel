@@ -25,7 +25,8 @@ export class ExtractTimeframe extends Construct {
         HIGHLIGHT_TABLE_NAME: props.highlightTable.tableName,
       },
       timeout: Duration.seconds(900),  // Increased from 180 to 900 seconds (15 minutes)
-      memorySize: 3008  // Increased memory for better performance (max Lambda memory)
+      memorySize: 3008,  // Increased memory for better performance (max Lambda memory)
+      reservedConcurrentExecutions: 2  // Limit to 2 concurrent executions for stability
     });
 
     props.bucket.grantReadWrite(this.handler);

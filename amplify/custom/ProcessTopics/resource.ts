@@ -29,7 +29,8 @@ export class ProcessTopics extends Construct {
         INITIAL_DELAY: '2',
       },
       timeout: Duration.seconds(900),  // Increased from 600 to allow for retries
-      memorySize: 1024  // Increased from 512 for better performance
+      memorySize: 1024,  // Increased from 512 for better performance
+      reservedConcurrentExecutions: 5  // Limit concurrent executions to prevent throttling
     });
 
     props.bucket.grantReadWrite(this.handler);
