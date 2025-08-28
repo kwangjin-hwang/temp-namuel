@@ -3,6 +3,9 @@ import json
 import boto3
 import botocore
 import os
+import time
+import random
+from botocore.exceptions import ClientError
 
 dynamodb = boto3.resource('dynamodb')
 bedrock = boto3.client(
@@ -54,6 +57,46 @@ def process_topic(topic, script, uuid, modelID, owner, index):
     }
     
     return payload
+
+def invoke_bedrock_with_retry(body, modelID, max_retries=None):
+    """
+    Invoke Bedrock API with exponential backoff retry logic
+    """
+    if max_retries is None:
+        max_retries = int(os.environ.get('MAX_RETRIES', '5'))
+    
+    initial_delay = float(os.environ.get('INITIAL_DELAY', '2'))
+    
+    for attempt in range(max_retries):
+        try:
+            response = bedrock.invoke_model(
+                body=body, 
+                accept='*/*', 
+                contentType='application/json', 
+                modelId=modelID
+            )
+            return response
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            
+            # Check if it's a throttling error
+            if error_code == 'ThrottlingException' or error_code == 'TooManyRequestsException':
+                if attempt == max_retries - 1:
+                    print(f"Max retries reached. Last error: {e}")
+                    raise
+                
+                # Calculate exponential backoff with jitter
+                base_delay = initial_delay * (2 ** attempt)  # Configurable initial delay
+                jitter = random.uniform(0, 1)
+                delay = base_delay + jitter
+                
+                print(f"Throttled. Attempt {attempt + 1}/{max_retries}. Waiting {delay:.2f} seconds...")
+                time.sleep(delay)
+            else:
+                # For non-throttling errors, raise immediately
+                raise
+    
+    raise Exception(f"Failed to invoke Bedrock after {max_retries} attempts")
 
 def extract_and_process_section(topic, script, modelID):
        
@@ -168,7 +211,7 @@ def extract_and_process_section(topic, script, modelID):
 
     #for test purposes
 
-    response = bedrock.invoke_model(body=body, accept='*/*', contentType='application/json', modelId=modelID)
+    response = invoke_bedrock_with_retry(body, modelID)
 
     response_body = json.loads(response['body'].read())
     

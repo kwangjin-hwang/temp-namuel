@@ -25,10 +25,11 @@ export class ExtractTopics extends Construct {
         BUCKET_NAME: props.bucket.bucketName,
         HISTORY_TABLE_NAME: props.historyTable.tableName,
         HIGHLIGHT_TABLE_NAME: props.highlightTable.tableName,
-
+        MAX_RETRIES: '5',
+        INITIAL_DELAY: '2',
       },
-      timeout: Duration.seconds(600),
-      memorySize: 512
+      timeout: Duration.seconds(900),  // Increased from 600 to allow for retries
+      memorySize: 1024  // Increased from 512 for better performance
     });
 
     props.bucket.grantReadWrite(this.handler);
