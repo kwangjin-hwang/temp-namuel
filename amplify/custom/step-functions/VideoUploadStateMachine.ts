@@ -145,6 +145,7 @@ export class VideoUploadStateMachine extends Construct {
 
     const highlightExtractMap = new sfn.Map(this, 'HighlightExtractMap', {
       itemsPath: "$.TopicsResult.Payload.topics",
+      maxConcurrency: 1,  // Process one at a time to avoid timeout issues
       parameters: {
         "topic.$": "$$.Map.Item.Value",
         "uuid.$": "$.uuid",
@@ -345,7 +346,8 @@ export class VideoUploadStateMachine extends Construct {
 
     this.stateMachine = new sfn.StateMachine(this, 'VideoUploadStateMachine', {
       definitionBody: sfn.DefinitionBody.fromChainable(definitionBody),
-      comment: "A Step Function to transcribe video using Amazon Transcribe"
+      comment: "A Step Function to transcribe video using Amazon Transcribe",
+      timeout: Duration.hours(2)  // Add overall timeout for the state machine
     });
   }
 }

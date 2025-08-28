@@ -7,7 +7,7 @@ import difflib
 
 # Set up logging
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)  # Set to DEBUG for more detailed logfs
+logger.setLevel(logging.INFO)  # Changed from DEBUG to INFO to reduce logging overhead
 
 # Initialize AWS clients
 s3 = boto3.client('s3')
@@ -25,12 +25,17 @@ def string_similarity(s1, s2):
     s1 = s1.replace(" ", "").lower()
     s2 = s2.replace(" ", "").lower()
     
+    # Quick length check for early rejection
+    len_ratio = len(s1) / len(s2) if len(s2) > 0 else 0
+    if len_ratio < 0.5 or len_ratio > 2.0:
+        return 0.0
+    
     # Convert strings to UTF-8 encoded byte objects
     b1 = s1.encode('utf-8')
     b2 = s2.encode('utf-8')
     
-    # Use diff_bytes() for comparison
-    matcher = difflib.SequenceMatcher(None, b1, b2)
+    # Use diff_bytes() for comparison with autojunk disabled for better performance
+    matcher = difflib.SequenceMatcher(None, b1, b2, autojunk=False)
     return matcher.ratio()
 
 def extract_full_transcript(json_content):
@@ -43,24 +48,53 @@ def find_timeframes_for_script(highlight_script, json_content):
     words_with_timestamp = json_content['results']['items']
     segments = [seg.strip() for seg in highlight_script.split("[...]") if seg.strip()]
     timeframes = []
+    
+    # Cache for pronunciation words to avoid repeated filtering
+    pronunciation_cache = {}
 
     for i, segment in enumerate(segments):
         cleaned_segment = segment.lower()
+        segment_words = cleaned_segment.split()
+        segment_word_count = len(segment_words)
+        
         best_match_ratio = 0
         best_match_start = 0
         best_match_end = 0
-
-        for j in range(len(words_with_timestamp)):
-            window_size = min(len(cleaned_segment.split()) + 4, len(words_with_timestamp) - j)
-            window = ' '.join(item['alternatives'][0]['content'] for item in words_with_timestamp[j:j+window_size] if item['type'] == 'pronunciation')
+        
+        # Early termination threshold
+        early_termination_threshold = 0.95
+        
+        # Use adaptive step size based on segment length
+        step_size = max(1, min(5, segment_word_count // 10))
+        
+        for j in range(0, len(words_with_timestamp), step_size):
+            window_size = min(segment_word_count + 4, len(words_with_timestamp) - j)
+            
+            # Cache window text to avoid repeated computation
+            cache_key = (j, window_size)
+            if cache_key not in pronunciation_cache:
+                window = ' '.join(item['alternatives'][0]['content'] for item in words_with_timestamp[j:j+window_size] if item['type'] == 'pronunciation')
+                pronunciation_cache[cache_key] = window
+            else:
+                window = pronunciation_cache[cache_key]
+            
+            # Quick length check
+            if len(window.split()) < segment_word_count * 0.7:
+                continue
+                
             match_ratio = string_similarity(cleaned_segment, window)
             
             if match_ratio > best_match_ratio:
                 best_match_ratio = match_ratio
                 best_match_start = j
                 best_match_end = j + window_size
+                
+                # Early termination for good matches
+                if match_ratio > early_termination_threshold:
+                    logger.info(f"Found early match with ratio {match_ratio:.2f} for segment {i+1}")
+                    break
 
-        if best_match_ratio > 0.9:  # Adjust this threshold as needed
+        if best_match_ratio > 0.85:  # Lowered threshold slightly for better matching
             start_index = best_match_start
             end_index = best_match_end - 1 
 
@@ -75,11 +109,9 @@ def find_timeframes_for_script(highlight_script, json_content):
             
             timeframes.append((start_time, end_time, i))  # Add segment index
             
-            logger.info(f"Timeframe found for segment {i+1}: {start_time} - {end_time}")
-            logger.debug(f"Match ratio: {best_match_ratio}")
-            logger.debug(f"Matched text: {' '.join(item['alternatives'][0]['content'] for item in words_with_timestamp[start_index:end_index+1] if item['type'] == 'pronunciation')}")
+            logger.info(f"Timeframe found for segment {i+1}: {start_time} - {end_time} (ratio: {best_match_ratio:.2f})")
         else:
-            logger.warning(f"Could not find a good match for segment {i+1}")
+            logger.warning(f"Could not find a good match for segment {i+1} (best ratio: {best_match_ratio:.2f})")
 
     # Sort timeframes based on start time
 
