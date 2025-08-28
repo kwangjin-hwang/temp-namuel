@@ -16,8 +16,8 @@ const VideoUploadComponent: React.FC = () => {
 
   const [tileValue, setTileValue] = useState("upload");
   const [selectedModel, setSelectedModel] = useState({
-    label: "Claude 3.5 Sonnet",
-    value: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+    label: "Claude Opus 4.1",
+    value: "us.anthropic.claude-opus-4-1-20250805-v1:0",
   });
   const navigate = useNavigate();
 
